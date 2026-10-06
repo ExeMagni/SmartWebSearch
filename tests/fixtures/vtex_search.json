@@ -1,0 +1,28 @@
+[
+  {
+    "productName": "Celular Samsung Galaxy A35 128GB",
+    "link": "https://www.oncity.com/celular-samsung-galaxy-a35/p",
+    "items": [{
+      "sellers": [{
+        "sellerName": "OnCity",
+        "sellerDefault": true,
+        "commertialOffer": {
+          "Price": 499999.0,
+          "ListPrice": 559999.0,
+          "AvailableQuantity": 10,
+          "Installments": [
+            {"NumberOfInstallments": 1, "Value": 499999.0, "InterestRate": 0},
+            {"NumberOfInstallments": 12, "Value": 41666.58, "InterestRate": 0},
+            {"NumberOfInstallments": 18, "Value": 40000.0, "InterestRate": 1.5}
+          ]
+        }
+      }]
+    }]
+  },
+  {
+    "productName": "Celular Sin Stock",
+    "link": "https://www.oncity.com/sin-stock/p",
+    "items": [{"sellers": [{"sellerName": "OnCity", "sellerDefault": true,
+      "commertialOffer": {"Price": 0, "ListPrice": 0, "AvailableQuantity": 0, "Installments": []}}]}]
+  }
+]
