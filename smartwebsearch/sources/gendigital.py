@@ -96,7 +96,10 @@ def _load_cache() -> dict:
 
 
 def _save_cache(cache: dict) -> None:
-    CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    # Archivo temporal + replace: un Ctrl+C a mitad de la escritura no deja el caché cortado.
+    tmp = CACHE_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(CACHE_PATH)
 
 
 def parse_post(post: dict, ocr_text: str) -> Offer | None:

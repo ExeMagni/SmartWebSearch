@@ -39,6 +39,7 @@ class MercadoLibre(Source):
     """
 
     name = "mercadolibre"
+    _token: str | None = None  # dura 6 h: alcanza para toda la corrida
 
     def search(self, query: str, limit: int = 50) -> list[Offer]:
         token = _env("MELI_ACCESS_TOKEN") or self._client_token()
@@ -48,6 +49,8 @@ class MercadoLibre(Source):
 
     # --- API oficial (catálogo) ---------------------------------------------
     def _client_token(self) -> str | None:
+        if self._token:
+            return self._token
         client_id, secret = _env("MELI_CLIENT_ID"), _env("MELI_CLIENT_SECRET")
         if not (client_id and secret):
             return None
@@ -58,7 +61,8 @@ class MercadoLibre(Source):
             timeout=20,
         )
         resp.raise_for_status()
-        return resp.json()["access_token"]
+        self._token = resp.json()["access_token"]
+        return self._token
 
     def _search_catalog(self, query: str, limit: int, token: str) -> list[Offer]:
         headers = {"Authorization": f"Bearer {token}"}
