@@ -12,6 +12,7 @@ class TecnoMovil(Source):
     embebido en el payload de React; lo filtramos localmente en el CLI."""
 
     name = "tecnomovil"
+    full_catalog = True
 
     def search(self, query: str, limit: int = 50) -> list[Offer]:
         return parse_catalog_html(self.session.get(BASE_URL + "/catalogo").text)
