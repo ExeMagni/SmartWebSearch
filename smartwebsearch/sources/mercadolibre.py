@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 
-from ..models import Offer
+from ..models import Offer, Plan
 from .base import Source
 
 API_URL = "https://api.mercadolibre.com/sites/MLA/search"
@@ -54,6 +54,11 @@ class MercadoLibre(Source):
     def _search_html(self, query: str, limit: int) -> list[Offer]:
         slug = quote(re.sub(r"\s+", "-", query.strip().lower()))
         resp = self.session.get(LISTING_URL.format(slug=slug))
+        if "account-verification" in resp.url:
+            raise RuntimeError(
+                "MercadoLibre bloqueó el listado (verificación anti-bot). "
+                "Configurá MELI_ACCESS_TOKEN para usar la API oficial."
+            )
         return parse_listing_html(resp.text)[:limit]
 
 
@@ -79,6 +84,13 @@ def parse_api_results(results: list[dict]) -> list[Offer]:
                 condition=r.get("condition"),
                 free_shipping=shipping.get("free_shipping"),
                 installments=inst,
+                financing=(
+                    [Plan("MercadoPago", installments["quantity"], installments["amount"],
+                          installments["quantity"] * installments["amount"])]
+                    if installments.get("quantity") and installments.get("amount")
+                    else []
+                ),
+                category="/Celulares y Smartphones/",  # la búsqueda filtra por CATEGORY_CELULARES
             )
         )
     return offers

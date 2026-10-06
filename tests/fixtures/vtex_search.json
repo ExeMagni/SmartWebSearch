@@ -11,9 +11,9 @@
           "ListPrice": 559999.0,
           "AvailableQuantity": 10,
           "Installments": [
-            {"NumberOfInstallments": 1, "Value": 499999.0, "InterestRate": 0},
-            {"NumberOfInstallments": 12, "Value": 41666.58, "InterestRate": 0},
-            {"NumberOfInstallments": 18, "Value": 40000.0, "InterestRate": 1.5}
+            {"NumberOfInstallments": 1, "Value": 499999.0, "InterestRate": 0, "TotalValuePlusInterestRate": 499999.0, "PaymentSystemName": "Visa"},
+            {"NumberOfInstallments": 12, "Value": 41666.58, "InterestRate": 0, "TotalValuePlusInterestRate": 499999.0, "PaymentSystemName": "Visa"},
+            {"NumberOfInstallments": 18, "Value": 40000.0, "InterestRate": 1.5, "TotalValuePlusInterestRate": 720000.0, "PaymentSystemName": "Naranja"}
           ]
         }
       }]
