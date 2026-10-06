@@ -1,0 +1,6 @@
+[
+ {"p_nombre": "Samsung A20", "p_precio": 112000, "p_link": "samsung-a20", "p_oferta": 0, "p_precio_oferta": 0,
+  "stock": [{"s_cantidad": 0, "s_ilimitado": 0}]},
+ {"p_nombre": "Motorola G35 - Usado", "p_precio": 324800, "p_link": "motorola-g35-usado", "p_oferta": 1, "p_precio_oferta": 299000,
+  "stock": [{"s_cantidad": 2, "s_ilimitado": 0}]}
+]

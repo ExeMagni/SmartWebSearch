@@ -5,8 +5,13 @@ from smartwebsearch.cli import in_category, is_accessory, matches
 from smartwebsearch.sources.cuyodigital import parse_bundle
 from smartwebsearch.sources.tecnomovil import parse_catalog_html
 from smartwebsearch.sources.tiendanube import _ars, parse_search_html
-from smartwebsearch.sources.mercadolibre import parse_api_results, parse_listing_html
+from smartwebsearch.sources.gendigital import parse_post
+from smartwebsearch.sources.mendofix import parse_page
+from smartwebsearch.sources.mercadolibre import parse_catalog_items, parse_listing_html
+from smartwebsearch.sources import sencomputacion
+from smartwebsearch.sources.tecphone import parse_sheet_csv
 from smartwebsearch.sources.vtex import parse_products
+from smartwebsearch.sources import xiaomistore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -25,12 +30,70 @@ def test_mercadolibre_listing_html():
     assert moto.original_price is None
 
 
-def test_mercadolibre_api():
-    data = json.loads((FIXTURES / "mercadolibre_api.json").read_text())
-    [offer] = parse_api_results(data["results"])
-    assert offer.price == 1299999
-    assert offer.seller == "TIENDA_OFICIAL"
-    assert offer.installments == "12x $108333.25 sin interés"
+def test_mercadolibre_catalog():
+    data = json.loads((FIXTURES / "mercadolibre_catalog.json").read_text())
+    [offer] = parse_catalog_items(data["product"], data["items"])
+    assert offer.title == "Celular Motorola G85 Ram 8gb / 256gb Azul"
+    assert offer.price == 724500
+    assert offer.url == "https://articulo.mercadolibre.com.ar/MLA-3347260402"
+    assert offer.seller == "vendedor 3351803138 (Castelar)"
+    assert offer.free_shipping is True
+    assert in_category(offer.category, "celulares")
+
+
+def test_tecphone_sheet():
+    offers = parse_sheet_csv((FIXTURES / "tecphone_sheet.csv").read_text(encoding="utf-8"))
+    used, new, ipad = offers  # sin la fila vendida ni la de precio $0
+    assert used.title == "iPhone 16 Pro Max 256 GB Natural Titanium"
+    assert used.price == 1323000
+    assert used.condition == "used"
+    assert used.seller == "TecPhone (Disponible, batería 88%, sin IVA, USD 840,00)"
+    assert new.title.startswith("iPhone 17 Pro 256 GB")
+    assert new.condition == "new" and "Solo por reserva" in new.seller
+    assert in_category(new.category, "celulares")
+    assert not in_category(ipad.category, "celulares")
+
+
+def test_mendofix_page():
+    used, sealed = parse_page((FIXTURES / "mendofix_page.html").read_text(encoding="utf-8"), 1500)
+    assert used.title == "IPHONE 12 PRO MAX USADO GRADO A 128GB"
+    assert used.price == 340 * 1500  # "34" y "0" vienen en spans separados
+    assert used.condition == "used"
+    assert used.url.endswith("#iphone-12-pro-max")
+    assert sealed.price == 1480 * 1500 and sealed.condition == "new"
+
+
+def test_sencomputacion_skips_out_of_stock():
+    products = json.loads((FIXTURES / "sencomputacion_products.json").read_text())
+    [offer] = sencomputacion.parse_products(products)
+    assert offer.title == "Motorola G35 - Usado"
+    assert offer.price == 299000 and offer.original_price == 324800
+    assert offer.condition == "used"
+
+
+def test_xiaomistore_search():
+    data = json.loads((FIXTURES / "xiaomistore_search.json").read_text(encoding="utf-8"))
+    [offer] = xiaomistore.parse_search(data)  # el Note 14 Pro dice "Agotado"
+    assert offer.title == "Redmi Note 15 8GB/256GB"
+    assert offer.price == 749999 and offer.original_price == 833332
+    [plan] = offer.financing
+    assert (plan.installments, plan.total) == (9, 749999)
+    assert in_category(offer.category, "celulares")
+    assert matches(offer.title, "redmi note 15 256gb -pro")
+
+
+def test_gendigital_post():
+    post = {
+        "link": "https://www.instagram.com/p/DeKj2VsDK-C",
+        "caption": "#PocoX8PROMAX✅ todo es nuevo, facturado, sellado y con garantía.",
+    }
+    ocr = "POCO X8 Pro Max 12GB : 512GB $ 988.999 Final.- u$s 624 / usd-T ENTREGA INMEDIATA"
+    offer = parse_post(post, ocr)
+    assert offer.title == "PocoX8PROMAX 12GB 512GB"
+    assert offer.price == 988999
+    assert offer.seller == "Gen Digital (USD 624)"
+    assert matches(offer.title, "poco x8 pro max 512gb")
+    assert parse_post(post, "imagen sin precio") is None
 
 
 def test_vtex_products_skips_out_of_stock():

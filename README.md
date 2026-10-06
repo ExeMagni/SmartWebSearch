@@ -7,12 +7,22 @@ formato y las ordena por precio.
 
 | Fuente | Método | Estado |
 |---|---|---|
-| MercadoLibre | API oficial con `MELI_ACCESS_TOKEN` | Sin token, el listado exige JavaScript (anti-bot) |
+| MercadoLibre | API oficial de catálogo (`/products/search` + ofertas de cada producto), con credenciales en `.env` | A pedido: `--mercadolibre` |
 | Frávega, Cetrogar, Naldo, Pardo, Coppel, OnCity, Carrefour, Jumbo, Vea, Disco, MasOnline, Tecnocompro | API pública de catálogo de VTEX, con todos los planes de cuotas por tarjeta | Funciona |
 | Casa Mendoza, Reig, Luciana Hogar (Mendoza) | Listado de búsqueda de Tiendanube (`data-variants`: precio, descuento efectivo, cuotas por medio de pago) | Funciona |
 | Cuyo Digital (Mendoza) | Catálogo embebido en el JS del sitio (efectivo, transferencia, cuotas) | Funciona |
 | TecnoMovil (Mendoza) | Catálogo embebido en el payload de Next.js de `/catalogo` | Funciona |
-| San José Celulares, Gen Digital, One Store, Claro, Movistar, Musimundo, Megatone… | Cargan los productos desde el navegador o tienen la búsqueda cerrada | Pendiente |
+| TecPhone (Mendoza, @tec_phone.ar) | Planilla pública de Google Sheets de la bio de Instagram (precio en pesos y USD, disponibilidad, batería de los usados) | Funciona |
+| Mendofix (Mendoza) | Página de WordPress/Elementor con precios en USD, pasados a pesos con el dólar blue ([dolarapi.com](https://dolarapi.com)) | Funciona |
+| SEN Computación | JSON de la categoría Celulares de Empretienda; saltea lo que no tiene stock | Funciona (hoy todo sin stock) |
+| Gen Digital (Mendoza) | Feed de Instagram del widget de su web; el precio sale de la imagen con OCR | Opcional: `pip install rapidocr-onnxruntime` |
+| Xiaomi Store (tienda oficial) | Búsqueda JSON de PrestaShop (`ajax=1`); saltea lo "Agotado", toma las cuotas sin interés y la memoria de la URL | Funciona |
+| Musimundo | Sitio en mantenimiento | Pendiente |
+| Tienda BNA | La API de búsqueda pide una clave interna de la web (`401 Bad credentials`) | No disponible |
+| San José Celulares, One Store, Claro, Movistar, Megatone… | Cargan los productos desde el navegador o tienen la búsqueda cerrada | Pendiente |
+
+Las ofertas sin stock (o vendidas/reservadas, en TecPhone) se descartan automáticamente
+en cada tienda que informa el stock.
 
 Para agregar otra tienda que use VTEX alcanza con sumarla a `VTEX_STORES` en
 `smartwebsearch/sources/vtex.py`. Para otras plataformas hay que crear una
@@ -25,11 +35,21 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
 python -m smartwebsearch "samsung galaxy a55"
-python -m smartwebsearch "iphone 15 128gb" -s mercadolibre --max-price 1500000
+python -m smartwebsearch "iphone 15 128gb" --mercadolibre --max-price 1500000
 python -m smartwebsearch "motorola g85" -o resultados/motorola.csv
 python -m smartwebsearch "samsung a56" -c 12   # compara el costo total en 12 cuotas
 python -m smartwebsearch "iphone 17 256 -pro -max" --tasa 30   # "-palabra" excluye
+python -m smartwebsearch "samsung s25 -fe" "iphone 15 pro max"   # compara: ¿cuál conviene?
+python -m smartwebsearch "iphone 15" "iphone 16" --nuevo   # solo nuevos (--usado: solo usados)
 ```
+
+`--nuevo` deja afuera los usados y reacondicionados, y `--usado` muestra solo esos. Se
+decide por la condición que informa la tienda y, como muchas marcan todo como nuevo,
+también por el título ("usado", "reacondicionado", "seminuevo"…).
+
+Con varias búsquedas se muestran las mejores opciones de cada una (`--top`, 5 por defecto)
+y al final una comparación con la mejor de cada búsqueda y cuál conviene. Las tiendas
+que bajan su catálogo entero se consultan una sola vez por corrida.
 
 ### Recomendación ("¿cuál conviene?")
 
@@ -63,14 +83,31 @@ Cada tienda nombra sus categorías a su manera (Cuyo Digital usa "MacBook", no
 "notebooks"). Si una tienda no aparece, probá con otro nombre o con `-k todas`.
 Con `--todo` se desactivan todos los filtros.
 
-### Token de MercadoLibre (recomendado)
+### MercadoLibre
 
-MercadoLibre pide autenticación para usar su API de búsqueda. Para obtener un token:
+No corre por defecto porque es lento: hace un request por cada producto del catálogo.
+Se suma con `--mercadolibre` (o con `-s mercadolibre`).
+
 1. Creá una aplicación en <https://developers.mercadolibre.com.ar/devcenter>.
-2. Generá un access token (OAuth) y exportalo con `export MELI_ACCESS_TOKEN=...`.
+2. Copiá el Client ID y el Client Secret al archivo `.env` de la raíz del proyecto
+   (no se sube a git):
+   ```
+   MELI_CLIENT_ID=...
+   MELI_CLIENT_SECRET=...
+   ```
+   El programa pide el token solo (`client_credentials`), no hace falta autorizar nada.
 
-Si no hay token, se usa el listado HTML. Funciona igual, pero es más frágil:
-si MercadoLibre cambia el diseño de la página, el parser deja de andar.
+`/sites/MLA/search` responde 403 a las apps comunes, así que se busca en el catálogo
+(`/products/search`, solo celulares) y se piden las ofertas de cada producto. Sin
+credenciales se intenta el listado HTML, que suele bloquear el antibot.
+
+### Gen Digital (OCR)
+
+Gen Digital publica los precios solo dentro de las imágenes de Instagram. Si instalás
+`rapidocr-onnxruntime`, se suma a la búsqueda por defecto. La primera vez tarda
+unos 10 s por publicación. Después, el texto leído queda guardado en
+`~/.smartwebsearch-gendigital-ocr.json` y solo se procesan las publicaciones nuevas.
+Se usan las publicaciones de los últimos 30 días.
 
 ## Tests
 

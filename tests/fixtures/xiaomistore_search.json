@@ -1,0 +1,23 @@
+{
+ "products": [
+  {
+   "id_product": "421",
+   "name": "Redmi Note 14 Pro",
+   "price_amount": 799999,
+   "regular_price_amount": 888887.78,
+   "has_discount": true,
+   "url": "https://xiaomistore.com.ar/smartphones/421-834-redmi-note-14-pro-6932554435882.html#/27-memoria_ram-8_gb/46-color-ocean_blue/58-memoria_interna-256_gb",
+   "category_name": "Smartphones"
+  },
+  {
+   "id_product": "436",
+   "name": "Redmi Note 15",
+   "price_amount": 749999,
+   "regular_price_amount": 833332,
+   "has_discount": true,
+   "url": "https://xiaomistore.com.ar/smartphones/436-862-redmi-note-15-8256gb-6932554400576.html#/27-memoria_ram-8_gb/49-color-black/58-memoria_interna-256_gb",
+   "category_name": "Smartphones"
+  }
+ ],
+ "rendered_products": "<article data-id-product=\"421\">$ 88.889 Agotado Smartphones Redmi Note 14 Pro Xiaomi MZB0KC0AR $ 799.999 $ 888.888 Finaliza en *Precio sin impuestos nacionales: $ 661.156 Hasta 9 cuotas sin interés $ 88.889 Sistema de cámara profesional con AI de 200M | Batería de 5,500mAh | Procesador MediaTek Helio G100-Ultra | Corning® Gorilla® Glass Victus® 2 | Pantalla de 120Hz con tecnología de cuidado ocular | Cámara selfie nítida de 32MP Ver más</article><article data-id-product=\"436\">$ 83.333 Available Smartphones Redmi Note 15 Xiaomi MZB0NJJAR $ 749.999 $ 833.332 Finaliza en *Precio sin impuestos nacionales: $ 619.834 Hasta 9 cuotas sin interés $ 83.333 Batería de 6000mAh | Pantalla con cristal de alta durabilidad | Resistencia al polvo y al agua IP64 | Cámara súper nítida de 108MP | Pantalla AMOLED FHD+ de 6.77'' | Procesador MediaTek Helio G100-Ultra Añadir al carrito</article>"
+}

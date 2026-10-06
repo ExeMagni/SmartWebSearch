@@ -14,6 +14,7 @@ class CuyoDigital(Source):
     """
 
     name = "cuyodigital"
+    full_catalog = True
 
     def search(self, query: str, limit: int = 50) -> list[Offer]:
         home = self.session.get(BASE_URL + "/").text

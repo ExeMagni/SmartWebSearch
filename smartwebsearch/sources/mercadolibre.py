@@ -1,53 +1,90 @@
 import os
 import re
+from pathlib import Path
 from urllib.parse import quote
 
+import requests
 from bs4 import BeautifulSoup
 
-from ..models import Offer, Plan
+from ..models import Offer
 from .base import Source
 
-API_URL = "https://api.mercadolibre.com/sites/MLA/search"
+API = "https://api.mercadolibre.com"
 LISTING_URL = "https://listado.mercadolibre.com.ar/{slug}"
-CATEGORY_CELULARES = "MLA1055"  # Celulares y Smartphones
+DOMAIN_CELULARES = "MLA-CELLPHONES"
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _env(name: str) -> str | None:
+    """Variable de entorno o, si no está, la línea NAME=valor del .env del proyecto."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() == name and not key.lstrip().startswith("#"):
+                return value.strip().strip("\"'") or None
+    except OSError:
+        pass
+    return None
 
 
 class MercadoLibre(Source):
     """MercadoLibre Argentina.
 
-    Si existe la variable de entorno MELI_ACCESS_TOKEN usa la API oficial
-    (recomendado: datos estructurados y estables). Si no, cae al listado HTML.
+    Con MELI_CLIENT_ID y MELI_CLIENT_SECRET (en el entorno o en .env) usa el
+    catálogo de la API oficial. /sites/MLA/search da 403 a las apps comunes
+    desde 2025, así que se busca en /products/search y se piden las ofertas de
+    cada producto. Sin credenciales cae al listado HTML (suele bloquearlo un antibot).
     """
 
     name = "mercadolibre"
 
     def search(self, query: str, limit: int = 50) -> list[Offer]:
-        token = os.environ.get("MELI_ACCESS_TOKEN")
+        token = _env("MELI_ACCESS_TOKEN") or self._client_token()
         if token:
-            return self._search_api(query, limit, token)
+            return self._search_catalog(query, limit, token)
         return self._search_html(query, limit)
 
-    # --- API oficial -------------------------------------------------------
-    def _search_api(self, query: str, limit: int, token: str) -> list[Offer]:
+    # --- API oficial (catálogo) ---------------------------------------------
+    def _client_token(self) -> str | None:
+        client_id, secret = _env("MELI_CLIENT_ID"), _env("MELI_CLIENT_SECRET")
+        if not (client_id and secret):
+            return None
+        resp = requests.post(
+            f"{API}/oauth/token",
+            data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret},
+            headers={"Accept": "application/json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+    def _search_catalog(self, query: str, limit: int, token: str) -> list[Offer]:
+        headers = {"Authorization": f"Bearer {token}"}
+        products = self.session.get(
+            f"{API}/products/search",
+            params={"site_id": "MLA", "status": "active", "q": query, "limit": 50,
+                    "domain_id": DOMAIN_CELULARES},  # sin esto, para iPhone vienen solo fundas
+            headers=headers,
+        ).json().get("results", [])
         offers: list[Offer] = []
-        offset = 0
-        while len(offers) < limit:
-            page_size = min(50, limit - len(offers))
-            resp = self.session.get(
-                API_URL,
-                params={
-                    "q": query,
-                    "category": CATEGORY_CELULARES,
-                    "offset": offset,
-                    "limit": page_size,
-                },
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            results = resp.json().get("results", [])
-            if not results:
+        # ponytail: un request por producto (con la pausa de PoliteSession); muchos
+        # productos del catálogo no tienen ofertas activas y responden 404.
+        for product in products:
+            if len(offers) >= limit:
                 break
-            offers.extend(parse_api_results(results))
-            offset += page_size
+            if product.get("domain_id") != DOMAIN_CELULARES:
+                continue
+            try:
+                items = self.session.get(
+                    f"{API}/products/{product['id']}/items", headers=headers
+                ).json().get("results", [])
+            except requests.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 404:
+                    continue
+                raise
+            offers.extend(parse_catalog_items(product, items))
         return offers[:limit]
 
     # --- Listado HTML ------------------------------------------------------
@@ -57,40 +94,29 @@ class MercadoLibre(Source):
         if "account-verification" in resp.url:
             raise RuntimeError(
                 "MercadoLibre bloqueó el listado (verificación anti-bot). "
-                "Configurá MELI_ACCESS_TOKEN para usar la API oficial."
+                "Cargá MELI_CLIENT_ID y MELI_CLIENT_SECRET en .env para usar la API oficial."
             )
         return parse_listing_html(resp.text)[:limit]
 
 
-def parse_api_results(results: list[dict]) -> list[Offer]:
+def parse_catalog_items(product: dict, items: list[dict]) -> list[Offer]:
+    """Ofertas de /products/{id}/items. El título sale del producto de catálogo."""
     offers = []
-    for r in results:
-        shipping = r.get("shipping") or {}
-        installments = r.get("installments") or {}
-        inst = None
-        if installments.get("quantity"):
-            inst = f"{installments['quantity']}x ${installments.get('amount')}"
-            if installments.get("rate") == 0:
-                inst += " sin interés"
+    for it in items:
+        item_id = it.get("item_id", "")
+        city = ((it.get("seller_address") or {}).get("city") or {}).get("name")
         offers.append(
             Offer(
                 source="mercadolibre",
-                title=r.get("title", ""),
-                price=r.get("price"),
-                original_price=r.get("original_price"),
-                currency=r.get("currency_id", "ARS"),
-                url=r.get("permalink", ""),
-                seller=(r.get("seller") or {}).get("nickname"),
-                condition=r.get("condition"),
-                free_shipping=shipping.get("free_shipping"),
-                installments=inst,
-                financing=(
-                    [Plan("MercadoPago", installments["quantity"], installments["amount"],
-                          installments["quantity"] * installments["amount"])]
-                    if installments.get("quantity") and installments.get("amount")
-                    else []
-                ),
-                category="/Celulares y Smartphones/",  # la búsqueda filtra por CATEGORY_CELULARES
+                title=product.get("name", ""),
+                price=it.get("price"),
+                original_price=it.get("original_price"),
+                currency=it.get("currency_id", "ARS"),
+                url=f"https://articulo.mercadolibre.com.ar/{item_id[:3]}-{item_id[3:]}",
+                seller=f"vendedor {it.get('seller_id')}" + (f" ({city})" if city else ""),
+                condition=it.get("condition"),
+                free_shipping=(it.get("shipping") or {}).get("free_shipping"),
+                category="/Celulares/",  # solo pedimos productos del dominio MLA-CELLPHONES
             )
         )
     return offers
