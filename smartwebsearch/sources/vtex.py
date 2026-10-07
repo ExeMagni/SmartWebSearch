@@ -23,6 +23,7 @@ VTEX_STORES = {
 
 SEARCH_PATH = "/api/catalog_system/pub/products/search/{query}"
 PAGE_SIZE = 50  # máximo permitido por VTEX por request
+MAX_PAGES = 4  # la búsqueda es difusa: después de 200 productos ya no aparece lo buscado
 
 
 class VtexStore(Source):
@@ -32,19 +33,19 @@ class VtexStore(Source):
         self.base_url = base_url.rstrip("/")
 
     def search(self, query: str, limit: int = 50) -> list[Offer]:
+        # Páginas completas y con tope: los productos sin stock se descartan, así que
+        # "pedir hasta juntar `limit`" podía recorrer el catálogo entero de a 1 producto.
         offers: list[Offer] = []
-        start = 0
-        while len(offers) < limit:
-            end = start + min(PAGE_SIZE, limit - len(offers)) - 1
+        for page in range(MAX_PAGES):
+            start = page * PAGE_SIZE
             resp = self.session.get(
                 self.base_url + SEARCH_PATH.format(query=quote(query)),
-                params={"_from": start, "_to": end},
+                params={"_from": start, "_to": start + PAGE_SIZE - 1},
             )
             products = resp.json()
-            if not products:
-                break
             offers.extend(parse_products(products, self.name))
-            start = end + 1
+            if len(offers) >= limit or len(products) < PAGE_SIZE:
+                break
         return offers[:limit]
 
 
