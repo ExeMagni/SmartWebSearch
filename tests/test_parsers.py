@@ -71,6 +71,27 @@ def test_sencomputacion_skips_out_of_stock():
     assert offer.condition == "used"
 
 
+def test_vtex_search_corta_aunque_todo_este_sin_stock():
+    from smartwebsearch.sources import vtex
+
+    sin_stock = {"productName": "X", "link": "u", "items": [{"sellers": [
+        {"sellerDefault": True, "commertialOffer": {"Price": 1, "AvailableQuantity": 0}}]}]}
+
+    class Session:
+        calls = []
+
+        def get(self, url, params):
+            self.calls.append(params)
+            resp = type("R", (), {})()
+            resp.json = lambda: [sin_stock] * (params["_to"] - params["_from"] + 1)
+            return resp
+
+    session = Session()
+    assert vtex.VtexStore("x", "https://x", session).search("xiaomi", 50) == []
+    assert len(session.calls) == vtex.MAX_PAGES  # antes seguía de página en página sin fin
+    assert all(p["_to"] - p["_from"] + 1 == vtex.PAGE_SIZE for p in session.calls)
+
+
 def test_xiaomistore_search():
     data = json.loads((FIXTURES / "xiaomistore_search.json").read_text(encoding="utf-8"))
     [offer] = xiaomistore.parse_search(data)  # el Note 14 Pro dice "Agotado"

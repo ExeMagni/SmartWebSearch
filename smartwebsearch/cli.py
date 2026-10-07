@@ -33,7 +33,7 @@ def _normalize(text: str) -> str:
 
 ACCESSORY_WORDS = (
     "funda", "protector", "vidrio", "templado", "carcasa", "cargador", "adaptador",
-    "cable", "auricular", "reloj", "smartwatch", "soporte", "lamina", "film",
+    "cable", "auricular", "buds", "reloj", "watch", "band", "soporte", "lamina", "film",
     "otterbox", "repuesto", "reemplazo",
     "bloqueado",  # equipos importados atados a un operador extranjero
 )
@@ -43,6 +43,9 @@ def is_accessory(title: str) -> bool:
     title = _normalize(title)
     return any(word in title for word in ACCESSORY_WORDS)
 
+
+# Precios simbólicos como el plan canje de Frávega ("Cargaste tu iPhone ... Bono", $1).
+MIN_REAL_PRICE = 1000
 
 USED_WORDS = ("usado", "reacondicionado", "refurbished", "seminuevo", "openbox")
 
@@ -211,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         offers = [
             o for o in offers
             if o.price is not None
+            and o.price >= MIN_REAL_PRICE
             and (args.todo or matches(o.title, query))
             and (args.todo or any_category or (
                 in_category(o.category, args.categoria) and not is_accessory(o.title)

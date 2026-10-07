@@ -29,6 +29,7 @@ def test_compara_varias_busquedas(tmp_path, monkeypatch, capsys):
                 Offer("catalogo", "Samsung Galaxy S25 256GB", 1_500_000, "u1", category="/Celulares/"),
                 Offer("catalogo", "Samsung Galaxy S25 FE 128GB", 900_000, "u2", category="/Celulares/"),
                 Offer("catalogo", "iPhone 15 Pro Max 256GB", 1_100_000, "u3", category="/Celulares/"),
+                Offer("catalogo", "Cargaste tu iPhone 15 Pro Max - Bono", 1, "u4", category="/Celulares/"),
             ]
 
     monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path / "config.json")
