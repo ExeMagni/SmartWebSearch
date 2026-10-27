@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 buscar_casas.py — Búsqueda y análisis de casas en Mendoza (Godoy Cruz, Luján de Cuyo,
-Maipú y Cuarta Sección / Capital) con presupuesto ≤ USD 150.000.
+Maipú y Cuarta Sección / Capital) con presupuesto ≤ PRECIO_MAX_USD (25% de ahorro para el crédito BNA).
 
 Funcionalidades:
 - Búsqueda en portales inmobiliarios líderes: InMoup y Zonaprop.
@@ -36,6 +36,8 @@ if sys.platform == "win32":
 
 from pipeline_mendoza_pro import (
     CasaPro,
+    PRECIO_MAX_TXT,
+    PRECIO_MAX_USD,
     build_excel_workbook,
     harvest_inmoup,
     harvest_zonaprop,
@@ -105,7 +107,7 @@ def main():
         description="Buscador inteligente de casas en zonas recomendadas de Mendoza.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--max-precio", type=float, default=150_000, help="Precio maximo en USD (default: 150000)")
+    parser.add_argument("--max-precio", type=float, default=PRECIO_MAX_USD, help=f"Precio maximo en USD (default: {PRECIO_MAX_USD}, 25%% de ahorro para el crédito BNA)")
     parser.add_argument("--dept", type=str, default=None, choices=["Godoy Cruz", "Luján de Cuyo", "Maipú", "Cuarta Sección / Capital"], help="Filtrar por departamento")
     parser.add_argument("--top", type=int, default=None, help="Mostrar solo las Top N mejores oportunidades por precio/m² cubierto")
     parser.add_argument("--privados", action="store_true", help="Mostrar solo casas en barrios privados o cerrados")
@@ -113,7 +115,7 @@ def main():
     args = parser.parse_args()
 
     print(SEP_DOBLE)
-    print(c("bold", "  BUSCADOR DE CASAS EN ZONAS SEGURAS DE MENDOZA (≤ USD 150k)"))
+    print(c("bold", "  BUSCADOR DE CASAS EN ZONAS SEGURAS DE MENDOZA (≤ " + PRECIO_MAX_TXT + ")"))
     print(SEP_DOBLE)
     print("  Departamentos: Godoy Cruz, Luján de Cuyo, Maipú, Cuarta Sección / Capital")
     print(f"  Filtro precio: Hasta {fmt_usd(args.max_precio)}")
