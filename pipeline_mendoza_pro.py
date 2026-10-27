@@ -3,22 +3,26 @@ pipeline_mendoza_pro.py
 
 Pipeline integral de búsqueda, filtrado riguroso, enriquecimiento de datos y
 generación de informe profesional en Excel para casas en Mendoza (Godoy Cruz,
-Luján de Cuyo, Maipú y Cuarta Sección / Capital) con presupuesto <= USD 150.000.
+Luján de Cuyo, Maipú y Cuarta Sección / Capital) con presupuesto <= PRECIO_MAX_USD (ahorro del 25% para el crédito BNA).
 
 Fuentes:
 - InMoup (todas las subzonas residenciales)
 - Zonaprop (13 subzonas clave x 2 páginas)
+- MercadoLibre Inmuebles (4 departamentos x 2 páginas)
+- Argenprop (3 departamentos x 2 páginas; tiene antibot, puede traer menos)
+- Más Hogares con BNA (API JSON del catálogo hipotecario del Banco Nación)
 
 Filtros:
 - Exclusión total de villas y zonas rojas (Villa Hipódromo, Campo Pappa, La Gloria, etc.)
 - Exclusión de avisos falsos / alquileres (< USD 20.000)
-- Presupuesto máximo: USD 150.000
+- Presupuesto máximo: PRECIO_MAX_USD = AHORRO_USD / 25% (el BNA financia hasta el 75%)
 """
 
 import os
 import re
 import statistics
 import sys
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Optional
@@ -34,6 +38,13 @@ from smartwebsearch.sources.inmoup import (
     _normalize_str,
     scrape_zona as scrape_inmoup_zona,
 )
+
+# Presupuesto: el BNA financia hasta el 75% del valor de compra o tasación (el menor),
+# así que el ahorro tiene que cubrir el 25% restante.
+AHORRO_USD = 20_000
+PORCENTAJE_FINANCIADO_BNA = 0.75
+PRECIO_MAX_USD = round(AHORRO_USD / (1 - PORCENTAJE_FINANCIADO_BNA))  # 80.000
+PRECIO_MAX_TXT = f"USD {PRECIO_MAX_USD:,}".replace(",", ".")
 
 # Forzar UTF-8 en consola de Windows
 if sys.platform == "win32":
@@ -65,6 +76,7 @@ class CasaPro:
     direccion: str
     url: str
     justificacion_zona: str
+    expensas_ars: Optional[float] = None  # mensuales; solo cuando el aviso las publica
 
 
 def classify_departamento(texto: str, default_dept: str = "") -> str:
@@ -205,19 +217,19 @@ def calculate_opportunity_score(precio_m2_cub: Optional[float], tipo_urb: str, c
 
 def harvest_zonaprop() -> list[CasaPro]:
     zonaprop_configs = [
-        ("Godoy Cruz", "casas-venta-godoy-cruz-hasta-150000-dolar"),
-        ("Godoy Cruz", "casas-venta-gobernador-benegas-hasta-150000-dolar"),
-        ("Godoy Cruz", "casas-venta-bombal-hasta-150000-dolar"),
-        ("Luján de Cuyo", "casas-venta-lujan-de-cuyo-hasta-150000-dolar"),
-        ("Luján de Cuyo", "casas-venta-carrodilla-hasta-150000-dolar"),
-        ("Luján de Cuyo", "casas-venta-mayor-drummond-hasta-150000-dolar"),
-        ("Luján de Cuyo", "casas-venta-chacras-de-coria-hasta-150000-dolar"),
-        ("Luján de Cuyo", "casas-venta-vistalba-hasta-150000-dolar"),
-        ("Maipú", "casas-venta-maipu-hasta-150000-dolar"),
-        ("Maipú", "casas-venta-luzuriaga-hasta-150000-dolar"),
-        ("Maipú", "casas-venta-gutierrez-hasta-150000-dolar"),
-        ("Cuarta Sección / Capital", "casas-venta-cuarta-seccion-hasta-150000-dolar"),
-        ("Cuarta Sección / Capital", "casas-venta-mendoza-capital-hasta-150000-dolar"),
+        ("Godoy Cruz", f"casas-venta-godoy-cruz-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Godoy Cruz", f"casas-venta-gobernador-benegas-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Godoy Cruz", f"casas-venta-bombal-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Luján de Cuyo", f"casas-venta-lujan-de-cuyo-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Luján de Cuyo", f"casas-venta-carrodilla-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Luján de Cuyo", f"casas-venta-mayor-drummond-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Luján de Cuyo", f"casas-venta-chacras-de-coria-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Luján de Cuyo", f"casas-venta-vistalba-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Maipú", f"casas-venta-maipu-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Maipú", f"casas-venta-luzuriaga-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Maipú", f"casas-venta-gutierrez-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Cuarta Sección / Capital", f"casas-venta-cuarta-seccion-hasta-{PRECIO_MAX_USD}-dolar"),
+        ("Cuarta Sección / Capital", f"casas-venta-mendoza-capital-hasta-{PRECIO_MAX_USD}-dolar"),
     ]
 
     session = PoliteSession()
@@ -258,7 +270,7 @@ def harvest_zonaprop() -> list[CasaPro]:
                     if not m_p:
                         continue
                     precio = float(m_p.group(1).replace(".", ""))
-                    if precio > 150_000 or precio < 20_000:
+                    if precio > PRECIO_MAX_USD or precio < 20_000:
                         continue
 
                     # Textos
@@ -371,9 +383,9 @@ def harvest_inmoup() -> list[CasaPro]:
 
     for slug, dept_default in subzonas:
         try:
-            props = scrape_inmoup_zona(slug, session=session, max_precio_usd=150_000)
+            props = scrape_inmoup_zona(slug, session=session, max_precio_usd=PRECIO_MAX_USD)
             for p in props:
-                if p.excluida or not p.precio_usd or p.precio_usd < 20_000 or p.precio_usd > 150_000:
+                if p.excluida or not p.precio_usd or p.precio_usd < 20_000 or p.precio_usd > PRECIO_MAX_USD:
                     continue
                 if p.url and p.url in vistos:
                     continue
@@ -510,6 +522,15 @@ def build_excel_workbook(casas: list[CasaPro], output_file: str):
         if fill.fill_type:
             c_link.fill = fill
 
+        # Columna 19: expensas mensuales (costo fijo a sumar en barrios privados)
+        c_exp = ws.cell(row=r_idx, column=19, value=c.expensas_ars or "—")
+        c_exp.number_format = '"$ "#,##0' if c.expensas_ars else "General"
+        c_exp.alignment = Alignment(horizontal="right", vertical="center")
+        c_exp.font = font_normal
+        c_exp.border = border_cell
+        if fill.fill_type:
+            c_exp.fill = fill
+
     standard_headers = [
         "#",
         "Departamento",
@@ -529,24 +550,25 @@ def build_excel_workbook(casas: list[CasaPro], output_file: str):
         "Por qué se recomienda",
         "Portal",
         "Enlace Directo",
+        "Expensas ($/mes)",
     ]
 
     col_widths = {
         "A": 5, "B": 22, "C": 26, "D": 22, "E": 20, "F": 15, "G": 13, "H": 13,
         "I": 15, "J": 14, "K": 8, "L": 8, "M": 8, "N": 20, "O": 42, "P": 45,
-        "Q": 11, "R": 18
+        "Q": 13, "R": 22, "S": 15
     }
 
     # ── Hoja 1: TOP 25 Oportunidades ───────────────────────────────────────────
     ws1 = wb.active
     ws1.title = "Top 25 Oportunidades"
-    ws1.merge_cells("A1:R1")
+    ws1.merge_cells("A1:S1")
     t1 = ws1["A1"]
-    t1.value = "TOP 25 OPORTUNIDADES — MEJOR RELACIÓN PRECIO/M² EN ZONAS SEGURAS (≤ USD 150.000)"
+    t1.value = f"TOP 25 OPORTUNIDADES — MEJOR RELACIÓN PRECIO/M² EN ZONAS SEGURAS (≤ {PRECIO_MAX_TXT})"
     t1.font = Font(name="Segoe UI", size=13, bold=True, color=c_navy)
     ws1.row_dimensions[1].height = 26
 
-    ws1.merge_cells("A2:R2")
+    ws1.merge_cells("A2:S2")
     sub1 = ws1["A2"]
     sub1.value = "Selección de las casas con el menor costo por m² cubierto en barrios residenciales y privados sin riesgo de seguridad."
     sub1.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
@@ -562,19 +584,20 @@ def build_excel_workbook(casas: list[CasaPro], output_file: str):
     for i, c in enumerate(top_25, 5):
         write_casa_row(ws1, i, i - 4, c, highlight_fill=fill_top if i % 2 == 0 else None)
 
-    ws1.auto_filter.ref = f"A4:R{len(top_25)+4}"
+    ws1.auto_filter.ref = f"A4:S{len(top_25)+4}"
+    ws1.freeze_panes = "C5"  # encabezado y departamento siempre visibles
     for col, w in col_widths.items():
         ws1.column_dimensions[col].width = w
 
     # ── Hoja 2: Barrios Privados y Cerrados ────────────────────────────────────
     ws2 = wb.create_sheet(title="Barrios Privados y Cerrados")
-    ws2.merge_cells("A1:R1")
+    ws2.merge_cells("A1:S1")
     t2 = ws2["A1"]
-    t2.value = "CASAS EN BARRIOS PRIVADOS Y URBANIZACIONES CERRADAS (≤ USD 150.000)"
+    t2.value = f"CASAS EN BARRIOS PRIVADOS Y URBANIZACIONES CERRADAS (≤ {PRECIO_MAX_TXT})"
     t2.font = Font(name="Segoe UI", size=13, bold=True, color=c_navy)
     ws2.row_dimensions[1].height = 26
 
-    ws2.merge_cells("A2:R2")
+    ws2.merge_cells("A2:S2")
     sub2 = ws2["A2"]
     sub2.value = "Propiedades con control de acceso, seguridad 24hs o perímetro cerrado en Luján de Cuyo, Maipú y Godoy Cruz."
     sub2.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
@@ -588,21 +611,22 @@ def build_excel_workbook(casas: list[CasaPro], output_file: str):
     for i, c in enumerate(privados, 5):
         write_casa_row(ws2, i, i - 4, c, highlight_fill=fill_privado if i % 2 == 0 else None)
 
-    ws2.auto_filter.ref = f"A4:R{len(privados)+4}"
+    ws2.auto_filter.ref = f"A4:S{len(privados)+4}"
+    ws2.freeze_panes = "C5"  # encabezado y departamento siempre visibles
     for col, w in col_widths.items():
         ws2.column_dimensions[col].width = w
 
     # ── Hoja 3: Todas las Casas Recomendadas ────────────────────────────────────
     ws3 = wb.create_sheet(title="Todas las Casas")
-    ws3.merge_cells("A1:R1")
+    ws3.merge_cells("A1:S1")
     t3 = ws3["A1"]
     t3.value = f"CATÁLOGO COMPLETO DE CASAS EN ZONAS RECOMENDADAS ({len(casas)} PROPIEDADES)"
     t3.font = Font(name="Segoe UI", size=13, bold=True, color=c_navy)
     ws3.row_dimensions[1].height = 26
 
-    ws3.merge_cells("A2:R2")
+    ws3.merge_cells("A2:S2")
     sub3 = ws3["A2"]
-    sub3.value = "Filtro anti-villas activo | Publicaciones deduplicadas y verificadas de InMoup y Zonaprop | Presupuesto: hasta USD 150.000"
+    sub3.value = f"Filtro anti-villas activo | Publicaciones deduplicadas de InMoup, Zonaprop, MercadoLibre, Argenprop y BNA +Hogares | Presupuesto: hasta {PRECIO_MAX_TXT}"
     sub3.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
     ws3.row_dimensions[2].height = 18
 
@@ -614,7 +638,8 @@ def build_excel_workbook(casas: list[CasaPro], output_file: str):
     for i, c in enumerate(casas_ordenadas, 5):
         write_casa_row(ws3, i, i - 4, c)
 
-    ws3.auto_filter.ref = f"A4:R{len(casas)+4}"
+    ws3.auto_filter.ref = f"A4:S{len(casas)+4}"
+    ws3.freeze_panes = "C5"  # encabezado y departamento siempre visibles
     for col, w in col_widths.items():
         ws3.column_dimensions[col].width = w
 
@@ -765,21 +790,219 @@ def build_excel_workbook(casas: list[CasaPro], output_file: str):
     print(f"     Barrios privados / cerrados: {len(privados)}")
 
 
+DEPARTAMENTOS = ["Godoy Cruz", "Luján de Cuyo", "Maipú", "Cuarta Sección / Capital"]
+_RE_EXPENSAS = re.compile(r"\$\s*([\d.]+)\s*expensas", re.I)
+
+
+def _build_casa(portal: str, prefijo: str, n: int, dept_default: str, precio: float,
+                titulo: str, ubicacion: str, features: str, url: str,
+                expensas: Optional[float] = None, dept_fijo: bool = False) -> Optional[CasaPro]:
+    """Aplica a un aviso los mismos filtros y clasificación que Zonaprop.
+    None si está fuera de presupuesto o en una zona excluida."""
+    if precio > PRECIO_MAX_USD or precio < 20_000:
+        return None
+    texto = f"{titulo} {ubicacion} {features}"
+    if _is_zona_excluida(texto)[0]:
+        return None
+    m_cub = re.search(r"([\d.]+)\s*m²\s*cub", features)
+    m_tot = re.search(r"([\d.]+)\s*m²\s*(?:tot|terr)", features)
+    cub = float(m_cub.group(1).replace(".", "")) if m_cub else None
+    tot = float(m_tot.group(1).replace(".", "")) if m_tot else None
+    if cub and tot and cub > tot:
+        cub, tot = tot, cub
+    dorm, ban, coch = extract_features_from_text(f"{features} | {titulo}")
+    # dept_fijo: el portal informa la localidad aparte, más confiable que adivinar por el texto
+    # ("Carril Godoy Cruz, Guaymallén" no es Godoy Cruz).
+    dept = dept_default if dept_fijo else classify_departamento(texto, default_dept=dept_default)
+    barrio, tipo_urb, justif = classify_barrio_detallado(texto, dept)
+    condicion = detect_condicion(texto)
+    p_cub = round(precio / cub, 0) if cub and cub > 15 else None
+    p_tot = round(precio / tot, 0) if tot and tot > 20 else None
+    return CasaPro(
+        id_unico=f"{prefijo}-{n}", portal=portal, departamento=dept,
+        barrio_especifico=barrio, tipo_urbanizacion=tipo_urb, condicion=condicion,
+        precio_usd=precio, m2_cubiertos=cub, m2_terreno=tot,
+        precio_m2_cubierto=p_cub, precio_m2_terreno=p_tot,
+        dormitorios=dorm, banos=ban, cocheras=coch,
+        score_oportunidad=calculate_opportunity_score(p_cub, tipo_urb, condicion),
+        titulo=titulo[:110], direccion=ubicacion, url=url, justificacion_zona=justif,
+        expensas_ars=expensas,
+    )
+
+
+def harvest_mercadolibre() -> list[CasaPro]:
+    """MercadoLibre Inmuebles: listado HTML con el tope de PRECIO_MAX_USD en la URL."""
+    slugs = dict(zip(DEPARTAMENTOS, ["mendoza/godoy-cruz", "mendoza/lujan-de-cuyo",
+                                     "mendoza/maipu", "mendoza-capital"]))
+    session = PoliteSession()
+    items: list[CasaPro] = []
+    vistos = set()
+    for dept, slug in slugs.items():
+        for desde in (1, 49):  # 2 páginas de 48
+            pag = "" if desde == 1 else f"_Desde_{desde}"
+            url = f"https://inmuebles.mercadolibre.com.ar/casas/venta/{slug}/{pag}_PriceRange_0USD-{PRECIO_MAX_USD}USD_NoIndex_True"
+            try:
+                resp = session.get(url)
+            except Exception as e:
+                print(f"[mercadolibre] Error en {dept}: {e}")
+                break
+            if "account-verification" in resp.url:
+                print("[mercadolibre] Bloqueado por verificación antibot; sigo con el resto.")
+                return items
+            cards = BeautifulSoup(resp.text, "html.parser").select("li.ui-search-layout__item")
+            for card in cards:
+                link = card.select_one("a.poly-component__title")
+                price = card.select_one(".poly-price__current .andes-money-amount")
+                if not link or not price or "dólares" not in (price.get("aria-label") or ""):
+                    continue  # sin precio o en pesos
+                m = re.search(r"(\d+)", price["aria-label"])
+                url_aviso = link["href"].split("#")[0]
+                if not m or url_aviso in vistos:
+                    continue
+                attrs = card.select_one(".poly-component__attributes-list")
+                loc = card.select_one(".poly-component__location")
+                casa = _build_casa(
+                    "MercadoLibre", "ML", len(items) + 1, dept, float(m.group(1)),
+                    link.get_text(" ", strip=True), loc.get_text(" ", strip=True) if loc else "",
+                    attrs.get_text(" | ", strip=True) if attrs else "", url_aviso,
+                )
+                if casa:
+                    vistos.add(url_aviso)
+                    items.append(casa)
+            if len(cards) < 48:
+                break
+    return items
+
+
+def harvest_argenprop() -> list[CasaPro]:
+    """Argenprop: listado HTML. Tiene antibot: tras unos pocos pedidos responde 202 vacío,
+    así que va lento y, si lo bloquean, devuelve lo que juntó hasta ahí."""
+    # ponytail: Capital no tiene slug verificado (el antibot cortó la prueba); se puede sumar después.
+    slugs = {"Godoy Cruz": "godoy-cruz", "Luján de Cuyo": "lujan-de-cuyo", "Maipú": "maipu"}
+    session = PoliteSession(delay=6)
+    items: list[CasaPro] = []
+    vistos = set()
+    for dept, slug in slugs.items():
+        for page in (1, 2):
+            url = f"https://www.argenprop.com/casas/venta/{slug}/dolares-hasta-{PRECIO_MAX_USD}"
+            if page > 1:
+                url += f"?pagina-{page}"
+            try:
+                resp = session.get(url)
+            except Exception as e:
+                print(f"[argenprop] Error en {dept}: {e}")
+                break
+            cards = BeautifulSoup(resp.text, "html.parser").select(".listing__item a.card")
+            if resp.status_code == 202 or not cards:
+                print(f"[argenprop] Bloqueado por antibot en {dept} (página {page}); devuelvo lo juntado.")
+                return items
+            for card in cards:
+                if card.get("idmoneda") != "2":  # 2 = dólares
+                    continue
+                url_aviso = "https://www.argenprop.com" + card["href"]
+                if url_aviso in vistos:
+                    continue
+                texto = card.get_text(" ", strip=True)
+                address = card.select_one(".card__address")
+                title = card.select_one(".card__title--primary, .card__title")
+                feats = card.select_one(".card__main-features")
+                exp = _RE_EXPENSAS.search(texto)
+                casa = _build_casa(
+                    "Argenprop", "AP", len(items) + 1, dept, float(card.get("montooperacion") or 0),
+                    title.get_text(" ", strip=True) if title else texto[:110],
+                    address.get_text(" ", strip=True) if address else "",
+                    feats.get_text(" | ", strip=True) if feats else texto,
+                    url_aviso,
+                    float(exp.group(1).replace(".", "")) if exp else None,
+                )
+                if casa:
+                    vistos.add(url_aviso)
+                    items.append(casa)
+            if len(cards) < 20:
+                break
+    return items
+
+
+BNA_HOGARES = "https://mashogaresconbna.com.ar"
+# Los barrios cerrados son tipos aparte en este portal; se suman como "barrio privado/cerrado".
+BNA_TIPOS = {"Casa": "", "Casa en barrio privado": "barrio privado", "Casa en barrio de acceso controlado": "barrio cerrado"}
+
+
+def harvest_bna_hogares() -> list[CasaPro]:
+    """Más Hogares con BNA: catálogo de la línea hipotecaria del Banco Nación. Su web
+    consulta una API JSON pública (/api/propiedades) con superficie, expensas y coordenadas.
+    El servidor a veces responde 408; se reintenta."""
+    session = PoliteSession(delay=1.5, timeout=120)
+    items: list[CasaPro] = []
+    for tipo, extra in BNA_TIPOS.items():
+        page, total_pages = 1, 1
+        while page <= total_pages:
+            data = None
+            for intento in range(4):
+                try:
+                    data = session.get(BNA_HOGARES + "/api/propiedades",
+                                       params={"provincia": "Mendoza", "tipo": tipo, "limit": 100, "page": page},
+                                       headers={"Accept": "application/json"}).json()["response"]
+                    break
+                except Exception as e:  # 408 "La operación está tardando más de lo esperado"
+                    print(f"[bna-hogares] Reintento ({tipo}, página {page}): {e}")
+                    time.sleep(10 * (intento + 1))
+            page += 1
+            if data is None:
+                # Se saltea solo esta página; las demás se siguen pidiendo.
+                print(f"[bna-hogares] Sin respuesta para {tipo}, página {page - 1}; la salteo.")
+                continue
+            total_pages = data.get("totalPages") or total_pages
+            for p in data["data"]:
+                if p.get("moneda") != "USD" or p.get("estadoReserva") != "Disponible" or not p.get("precio"):
+                    continue  # en pesos, reservada o sin precio
+                localidad = p.get("localidad") or ""
+                # "1ra Sección", "6ta Sección"...: las secciones son de la Ciudad de Mendoza.
+                capital = " capital" if re.search(r"\d+\s*(?:ra|da|ta|ma|va|na)\s+secci", localidad, re.I) else ""
+                ubicacion = f"{p.get('direccionDescripcion') or ''}, {localidad}{capital}, Mendoza".strip(", ")
+                features = " | ".join(x for x in (
+                    f"{p['superficieCubierta']} m² cub" if p.get("superficieCubierta") else "",
+                    f"{p['superficieTotal']} m² tot" if p.get("superficieTotal") else "",
+                    f"{p['dormitorios']} dorm" if p.get("dormitorios") else "",
+                    f"{p['banos']} baños" if p.get("banos") else "",
+                    f"{p['cocheras']} cochera" if p.get("cocheras") else "",
+                    p.get("estadoPropiedad") or "",
+                    extra,
+                ) if x)
+                dept = classify_departamento(f"{localidad}{capital}")
+                if dept not in DEPARTAMENTOS:
+                    continue  # fuera de las zonas que busca el pipeline (San Rafael, Guaymallén...)
+                expensas = p.get("expensas") if p.get("monedaExpensas") == "ARS" else None
+                casa = _build_casa(
+                    "BNA +Hogares", "BNA", len(items) + 1, dept, float(p["precio"]),
+                    p.get("titulo") or f"{tipo} en {localidad}", ubicacion, features,
+                    f"{BNA_HOGARES}/propiedad/{p['id']}", expensas, dept_fijo=True,
+                )
+                if casa:
+                    items.append(casa)
+    return items
+
+
 def main():
     print("=" * 80)
-    print("  INICIANDO PIPELINE PRO DE CASAS EN MENDOZA (≤ USD 150.000)")
+    print(f"  INICIANDO PIPELINE PRO DE CASAS EN MENDOZA (≤ {PRECIO_MAX_TXT})")
     print("=" * 80)
 
-    print("\n[Paso 1/3] Extrayendo de InMoup (todas las subzonas residenciales)...")
-    inmoup_props = harvest_inmoup()
-    print(f"           -> {len(inmoup_props)} propiedades recolectadas de InMoup")
-
-    print("\n[Paso 2/3] Extrayendo de Zonaprop (13 subzonas x 2 páginas)...")
-    zonaprop_props = harvest_zonaprop()
-    print(f"           -> {len(zonaprop_props)} propiedades recolectadas de Zonaprop")
+    fuentes = [
+        ("InMoup (todas las subzonas residenciales)", harvest_inmoup),
+        ("Zonaprop (13 subzonas x 2 páginas)", harvest_zonaprop),
+        ("MercadoLibre Inmuebles (4 departamentos x 2 páginas)", harvest_mercadolibre),
+        ("Argenprop (3 departamentos x 2 páginas, con antibot)", harvest_argenprop),
+        ("Más Hogares con BNA (API del catálogo hipotecario)", harvest_bna_hogares),
+    ]
+    todos: list[CasaPro] = []
+    for i, (nombre, harvest) in enumerate(fuentes, 1):
+        print(f"\n[Paso {i}/{len(fuentes) + 1}] Extrayendo de {nombre}...")
+        props = harvest()
+        print(f"           -> {len(props)} propiedades recolectadas")
+        todos += props
 
     # Unir y deduplicar
-    todos = inmoup_props + zonaprop_props
     unicos: list[CasaPro] = []
     urls_vistas = set()
 
@@ -790,7 +1013,7 @@ def main():
 
     print(f"\n[OK] Total de propiedades únicas en zonas recomendadas: {len(unicos)}")
 
-    print("\n[Paso 3/3] Generando informe Excel multipestaña con formato ejecutivo...")
+    print(f"\n[Paso {len(fuentes) + 1}/{len(fuentes) + 1}] Generando informe Excel multipestaña con formato ejecutivo...")
     build_excel_workbook(unicos, "casas_mendoza_recomendadas.xlsx")
 
 
